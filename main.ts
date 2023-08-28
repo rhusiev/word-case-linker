@@ -1,89 +1,193 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
 
-// Remember to rename these classes and interfaces!
+import { stemSentence } from "tree_stem";
+
+// js-levenshtein
+const levenshtein = require("js-levenshtein");
 
 interface MyPluginSettings {
 	mySetting: string;
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+	mySetting: "default",
+};
 
 export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
 
+	async getWordCaseBacklinks(): Promise<{
+		[key: string]: [number, string, number, number][];
+	}> {
+		const { vault } = this.app;
+
+		// Get current file name
+		const currentFileName = stemSentence(
+			this.app.workspace.getActiveFile()?.basename,
+		);
+		const currentFileNameWordCount = currentFileName.length;
+
+		const fileContents: string[] = await Promise.all(
+			vault.getMarkdownFiles().map((file) => vault.cachedRead(file)),
+		);
+
+		const backlinks: { [key: string]: [number, string, number, number][] } =
+			{};
+		fileContents.forEach((fileContent, fileIndex) => {
+			const lines = fileContent.split("\n");
+			lines.forEach((line, lineIndex) => {
+				const stemmedLine = stemSentence(line);
+				const firstNameWord = currentFileName[0];
+				for (
+					let wordIndex = 0;
+					wordIndex < stemmedLine.length - currentFileNameWordCount + 1;
+					wordIndex++
+				) {
+					const word = stemmedLine[wordIndex];
+					const distance = levenshtein(word, firstNameWord);
+					if (distance > 2) continue;
+
+
+					let isMatch = true;
+
+					for (
+						let nextWordIndex = wordIndex;
+						nextWordIndex < wordIndex + currentFileNameWordCount;
+						nextWordIndex++
+					) {
+						const nextWord = stemmedLine[nextWordIndex];
+						const currentWord =
+							currentFileName[nextWordIndex - wordIndex];
+						const distance = levenshtein(nextWord, currentWord);
+						if (distance > 2) {
+							isMatch = false;
+							break;
+						}
+					}
+
+					if (!isMatch) continue;
+
+					let charIndex = 0;
+					const words = line.split(/\s/);
+					const spaces = line.split(/\S/);
+					// Remove empty strings
+					let i = 0;
+					while (i < words.length) {
+						if (words[i] === "") {
+							words.splice(i, 1);
+						} else {
+							i++;
+						}
+					}
+					i = 0;
+					while (i < spaces.length) {
+						if (spaces[i] === "") {
+							spaces.splice(i, 1);
+						} else {
+							i++;
+						}
+					}
+					for (let i = 0; i < wordIndex; i++) {
+						charIndex += words[i].length + spaces[i].length;
+					}
+					let endCharIndex = charIndex;
+					for (
+						let i = wordIndex;
+						i < wordIndex + currentFileNameWordCount;
+						i++
+					) {
+						const words = line.split(/\s/);
+						const spaces = line.split(/\S/);
+						// Add the length of the word and the amount of whitespace after
+						endCharIndex += words[i].length + spaces[i].length;
+					}
+
+					// Extend to the end of the word
+					let endWordCharIndex = endCharIndex;
+					while (
+						endWordCharIndex < line.length &&
+						!line[endWordCharIndex].match(/\s/)
+					) {
+						endWordCharIndex++;
+					}
+					if (charIndex === undefined) continue;
+					if (!backlinks[fileIndex]) {
+						backlinks[fileIndex] = [];
+					}
+					backlinks[fileIndex].push([
+						lineIndex + 1,
+						line,
+						charIndex,
+						endWordCharIndex,
+					]);
+				}
+			});
+		});
+
+		return backlinks;
+	}
+
+	async activateView() {
+		this.app.workspace.detachLeavesOfType("word-case-backlink");
+
+		await this.app.workspace.getRightLeaf(false).setViewState({
+			type: "word-case-backlink",
+			active: true,
+		});
+
+		this.app.workspace.revealLeaf(
+			this.app.workspace.getLeavesOfType("word-case-backlink")[0],
+		);
+	}
+
+	async updateView() {
+		const backlinks = await this.getWordCaseBacklinks();
+		this.app.workspace
+			.getLeavesOfType("word-case-backlink")
+			.forEach((leaf) =>
+				leaf.setViewState({
+					type: "word-case-backlink",
+					state: {
+						backlinks,
+					},
+				}),
+			);
+	}
+
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		this.registerView(
+			"word-case-backlink",
+			(leaf: WorkspaceLeaf) => new BacklinkView(leaf),
+		);
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+		if (this.app.workspace.getActiveFile()) {
+			await this.activateView();
+			await this.updateView();
+		}
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+		this.registerEvent(
+			this.app.workspace.on("file-open", async () => {
+				await this.updateView();
+			}),
+		);
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.registerEvent(
+			this.app.vault.on("rename", async (file) => {
+				await this.updateView();
+			}),
+		);
 	}
 
-	onunload() {
-
-	}
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData(),
+		);
 	}
 
 	async saveSettings() {
@@ -91,44 +195,137 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+class BacklinkView extends ItemView {
+	constructor(leaf: WorkspaceLeaf) {
+		super(leaf);
 	}
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+	getViewType(): string {
+		return "word-case-backlink";
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
+	getDisplayText(): string {
+		return "Word Case Backlink";
 	}
 
-	display(): void {
-		const {containerEl} = this;
+	async onOpen(): Promise<void> {
+		const container = this.containerEl.children[1];
+		container.empty();
 
-		containerEl.empty();
+		container.createEl("h2", { text: "Word Case Backlinks" });
+	}
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+	async onClose(): Promise<void> {
+		const container = this.containerEl.children[1];
+		container.empty();
+	}
+
+	async setState(state: any): Promise<void> {
+		if (!state || !state.backlinks) return;
+
+		const container = this.containerEl.children[1];
+		container.empty();
+		container.createEl("h2", { text: "Word Case Backlinks" });
+
+		const currentFile = container.createEl("span", {
+			text: this.app.workspace.getActiveFile()?.basename,
+			cls: "filename",
+		});
+		currentFile.style.marginBottom = "0.5rem";
+		currentFile.style.fontSize = "1.25rem";
+		currentFile.style.marginRight = "0.5rem";
+
+		// Add a line separator
+		const separator = container.createEl("hr");
+		separator.style.marginTop = "0.5rem";
+		separator.style.marginBottom = "0.5rem";
+
+		const list = container.createEl("div");
+		for (const [fileIndex, backlink] of Object.entries(state.backlinks)) {
+			const file = this.app.vault.getMarkdownFiles()[fileIndex];
+			const listItem = list.createEl("div", {
+				cls: "backlink-list-item",
+			});
+			listItem.style.padding = "0.5rem";
+			listItem.style.borderRadius = "0.5rem";
+			listItem.style.marginBottom = "0.5rem";
+			listItem.addEventListener("mouseenter", () => {
+				listItem.style.backgroundColor =
+					"var(--background-secondary-alt)";
+			});
+			listItem.addEventListener("mouseleave", () => {
+				listItem.style.backgroundColor = "var(--background-secondary)";
+			});
+			listItem.addEventListener("click", () => {
+				this.app.workspace.openLinkText(file.basename, file.path);
+			});
+			const filename = listItem.createEl("span", {
+				text: file.basename,
+				cls: "filename",
+			});
+			filename.style.fontSize = "1.15rem";
+
+			const backlinkList = listItem.createEl("div", {
+				cls: "backlink-list",
+			});
+			for (const [lineIndex, line, charIndex, endCharIndex] of backlink) {
+				const backlinkListItem = backlinkList.createEl("p", {
+					cls: "backlink-list-item",
+				});
+				backlinkListItem.style.marginTop = "0.5rem";
+				backlinkListItem.style.marginBottom = "0.5rem";
+				backlinkListItem.style.marginLeft = "1rem";
+				backlinkListItem.style.display = "flex";
+				backlinkListItem.style.alignItems = "center";
+				const lineNumber = backlinkListItem.createEl("span", {
+					text: lineIndex.toString() + ": ",
+					cls: "line-number",
+				});
+				lineNumber.style.width = "1rem";
+
+				const threashold = 30;
+				let updatedCharIndex = charIndex;
+				let updatedEndCharIndex = endCharIndex;
+				let lineText = line;
+				if (updatedCharIndex > threashold) {
+					lineText =
+						"..." + line.slice(charIndex - threashold, line.length);
+					updatedCharIndex = threashold + 3;
+					updatedEndCharIndex =
+						endCharIndex - charIndex + updatedCharIndex;
+				}
+				if (lineText.length - updatedEndCharIndex > threashold) {
+					lineText =
+						lineText.slice(0, updatedEndCharIndex + threashold) +
+						"...";
+				}
+				const backlinkText = backlinkListItem.createEl("div", {
+					cls: "backlink-text",
+				});
+				backlinkText.style.fontSize = "0.75rem";
+				backlinkText.style.backgroundColor =
+					"var(--background-primary)";
+				backlinkText.style.padding = "0.25rem";
+				backlinkText.style.borderRadius = "0.25rem";
+				backlinkText.style.display = "inline-block";
+				backlinkText.style.width = "100%";
+				const preText = lineText.slice(0, updatedCharIndex);
+				backlinkText.createEl("span", {
+					text: preText,
+				});
+				const highlightText = lineText.slice(
+					updatedCharIndex,
+					updatedEndCharIndex,
+				);
+				const highlight = backlinkText.createEl("span", {
+					text: highlightText,
+					cls: "highlight",
+				});
+				highlight.style.backgroundColor = "var(--text-highlight-bg)";
+				backlinkText.createEl("span", {
+					text: lineText.slice(updatedEndCharIndex),
+				});
+			}
+		}
 	}
 }
