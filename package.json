@@ -4,9 +4,9 @@
 	"description": "A plugin to find unlinked mentions of a note, searching for different word cases.",
 	"main": "main.js",
 	"scripts": {
-		"dev": "node esbuild.config.mjs",
+		"dev": "bun esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json"
+		"version": "bun version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
 	"author": "rad1an",
