@@ -65,7 +65,7 @@ export function stemWord(word) {
 	return word.slice(0, -cut);
 }
 
-export function stemSentence(sentence) {
+export default function stemSentence(sentence) {
 	/* Split sentence into words by spaces, dots, commas, dashes, etc.
 	let words = sentence.split(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g); */
 	let words = sentence.split(" ");
