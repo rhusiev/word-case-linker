@@ -1,9 +1,8 @@
-import { Notice, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
+import { Plugin, WorkspaceLeaf, ItemView } from "obsidian";
 
 import { stemSentence } from "tree_stem";
 
-// js-levenshtein
-const levenshtein = require("js-levenshtein");
+import levenshtein from "js-levenshtein";
 
 interface MyPluginSettings {
 	mySetting: string;
@@ -40,13 +39,13 @@ export default class MyPlugin extends Plugin {
 				const firstNameWord = currentFileName[0];
 				for (
 					let wordIndex = 0;
-					wordIndex < stemmedLine.length - currentFileNameWordCount + 1;
+					wordIndex <
+					stemmedLine.length - currentFileNameWordCount + 1;
 					wordIndex++
 				) {
 					const word = stemmedLine[wordIndex];
 					const distance = levenshtein(word, firstNameWord);
 					if (distance > 2) continue;
-
 
 					let isMatch = true;
 
