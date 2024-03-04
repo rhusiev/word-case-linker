@@ -2,7 +2,7 @@ import levenshtein from "js-levenshtein";
 
 export default function getBacklinks(
 	fileContents: string[],
-	currentFileName: string,
+	currentFileName: string[],
 	stem: CallableFunction,
 ): { [key: string]: [number, string, number, number][] } {
 	const currentFileNameWordCount = currentFileName.length;
