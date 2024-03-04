@@ -28,24 +28,17 @@ if (require.main === module) {
 	main();
 }
 
-/** @param {string} word
- * @param {number} num_features
- * @param {string} alph
- * @returns {number[]}
- */
 function wordToVec(word, num_features, alph) {
 	// Translate Ukrainian alphabet into integers
-	let vec = new Array(num_features).fill(0);
-	let it = Array.from(
+	var vec = new Array(num_features).fill(0);
+	var it = Array.from(
 		{ length: Math.min(vec.length, word.length) },
 		(_, i) => i,
 	)[Symbol.iterator]();
-	for (let k of [...word.toLowerCase()].reverse()) {
-		let ind;
-		let i;
+	for (var k of [...word.toLowerCase()].reverse()) {
 		try {
-			i = it.next().value;
-			ind = alph.indexOf(k);
+			var i = it.next().value;
+			var ind = alph.indexOf(k);
 		} catch (e) {
 			continue;
 		}
@@ -57,10 +50,6 @@ function wordToVec(word, num_features, alph) {
 	return vec;
 }
 
-/**
- * @param {string} word
- * @returns {string} stemmed word
- */
 export function stemWord(word) {
 	// Stem one word
 	const NUM_FEATURES = 10;
@@ -76,11 +65,7 @@ export function stemWord(word) {
 	return word.slice(0, -cut);
 }
 
-/**
- * @param {string} sentence
- * @returns {string[]} stemmed sentence
- */
-export default function stemSentence(sentence) {
+export function stemSentence(sentence) {
 	/* Split sentence into words by spaces, dots, commas, dashes, etc.
 	let words = sentence.split(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g); */
 	let words = sentence.split(" ");

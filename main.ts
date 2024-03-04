@@ -16,24 +16,34 @@ const DEFAULT_SETTINGS: MyPluginSettings = {
 
 export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
+	sidebarActive: boolean;
 
-	async getWordCaseBacklinks(): Promise<{
-		[key: string]: [number, string, number, number][];
-	}> {
+	async getWordCaseBacklinks(): Promise<
+		() => {
+			[key: string]: [number, string, number, number][];
+		}
+	> {
 		const { vault } = this.app;
 
 		// Get current file name
-		const currentFileName: string = ukrainianStem(
-			this.app.workspace.getActiveFile()?.basename,
-		);
+		const fileName = this.app.workspace.getActiveFile();
+		if (fileName?.basename === undefined) {
+			return () => {
+				return {};
+			};
+		}
+		const currentFileName: string[] = ukrainianStem(fileName.basename);
 		const fileContents: string[] = await Promise.all(
 			vault.getMarkdownFiles().map((file) => vault.cachedRead(file)),
 		);
 
-		return getBacklinks(fileContents, currentFileName, ukrainianStem);
+		return () => {
+			return getBacklinks(fileContents, currentFileName, ukrainianStem);
+		};
 	}
 
 	async activateView() {
+		this.sidebarActive = true;
 		this.app.workspace.detachLeavesOfType("word-case-backlink");
 
 		await this.app.workspace.getRightLeaf(false).setViewState({
@@ -47,6 +57,21 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async updateView() {
+		if (!this.sidebarActive) return;
+		this.app.workspace
+			.getLeavesOfType("word-case-backlink")
+			.forEach((leaf) =>
+				leaf.setViewState({
+					type: "word-case-backlink",
+					state: {
+						updateName: true,
+					},
+				}),
+			);
+	}
+
+	async updateBacklinks() {
+		if (!this.sidebarActive) return;
 		const backlinks = await this.getWordCaseBacklinks();
 		this.app.workspace
 			.getLeavesOfType("word-case-backlink")
@@ -55,21 +80,27 @@ export default class MyPlugin extends Plugin {
 					type: "word-case-backlink",
 					state: {
 						backlinks,
+						updateName: true,
 					},
 				}),
 			);
 	}
 
 	async onload() {
+		this.sidebarActive = false;
 		await this.loadSettings();
 
 		this.registerView(
 			"word-case-backlink",
-			(leaf: WorkspaceLeaf) => new SidebarView(leaf),
+			(leaf: WorkspaceLeaf) => new SidebarView(leaf, this),
 		);
 
-		if (this.app.workspace.getActiveFile()) {
+		this.addRibbonIcon("dice", "Word Case Backlink", async () => {
 			await this.activateView();
+			await this.updateBacklinks();
+		});
+
+		if (this.app.workspace.getActiveFile()) {
 			await this.updateView();
 		}
 

@@ -48,7 +48,7 @@ export class SidebarView extends ItemView {
 
 		// Add a button to call updateBacklinks
 		const updateButton = container.createEl("button", {
-			text: "Update",
+			text: "Find Backlinks",
 			cls: "update-button",
 		});
 		updateButton.style.backgroundColor = "var(--background-secondary-alt)";
